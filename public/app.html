@@ -73,7 +73,7 @@
 
     function ensureAuth(){
       const t = localStorage.getItem('token'); const me = localStorage.getItem('me');
-      if(!t || !me){ location.href="/auth.html"; return false; }
+      if(!t || !me){ location.href="/index.html"; return false; }
       state.token = t; state.me = JSON.parse(me);
       return true;
     }

@@ -38,7 +38,7 @@ app.use("/api/invites", inviteRouter(prisma));
 
 wireMessageSockets(io);
 
-app.get("/", (req,res)=>res.sendFile(process.cwd()+"/public/auth.html"));
+app.get("/", (req,res)=>res.sendFile(process.cwd()+"/public/index.html"));
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, ()=>console.log(`listening on ${PORT}`));
