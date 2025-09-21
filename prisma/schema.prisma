@@ -1,0 +1,92 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Users {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  avatarUrl    String?       
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  memberships  GroupMembers[]
+  messages     Messages[]
+  reactions    Reactions[]
+  groups       Groups[] @relation("GroupCreator")
+}
+
+model Groups {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  creatorId   String
+  creator     Users    @relation("GroupCreator", fields: [creatorId], references: [id])
+  createdAt   DateTime @default(now())
+
+  members     GroupMembers[]
+  messages    Messages[]
+  invites     Invites[]
+}
+
+model GroupMembers {
+  groupId  String
+  userId   String
+  role     MemberRole @default(MEMBER)
+  joinedAt DateTime   @default(now())
+
+  group    Groups @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user     Users  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, userId])
+  @@index([userId])
+}
+
+enum MemberRole {
+  OWNER
+  MANAGER
+  MEMBER
+}
+
+model Messages {
+  id        String   @id @default(uuid())
+  groupId   String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+
+  group     Groups @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      Users  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  reactions Reactions[]
+
+  @@index([groupId, createdAt])
+}
+
+model Reactions {
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message   Messages @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      Users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId, emoji])
+}
+
+model Invites {
+  id         String   @id @default(uuid())
+  groupId    String
+  token      String   @unique
+  expiresAt  DateTime?
+  usageLimit Int      @default(0)
+  usedCount  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  group      Groups @relation(fields: [groupId], references: [id], onDelete: Cascade)
+}

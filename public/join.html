@@ -1,0 +1,23 @@
+<!doctype html>
+<html><body>
+<script>
+(async()=>{
+  const token=new URLSearchParams(location.search).get("token");
+  const jwt=localStorage.getItem("token");
+  if(!token) 
+    return document.body.innerText="Missing token";
+  if(!jwt){ 
+    alert("Please login first"); location.href="/"; 
+    return; 
+  }
+  const r=await fetch(`/api/invites/redeem/${token}`,{method:"POST",headers:{Authorization:"Bearer "+jwt}});
+  const d=await r.json(); 
+  if(!r.ok){
+    alert(d.error||"Invite failed");
+    location.href="/app.html";
+    return;
+  }
+  alert("Joined!"); location.href="/app.html";
+})();
+</script>
+</body></html>

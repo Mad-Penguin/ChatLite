@@ -1,0 +1,311 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>ChatLite – App</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body class="app-grid">
+  <header class="app-header">
+    <div><strong>ChatLite</strong></div>
+    <div>
+      <button id="btn-logout">Logout</button>
+    </div>
+  </header>
+
+  <aside class="sidebar">
+    <section class="card">
+      <h3>My profile</h3>
+      <img id="avatar" class="avatar" src="" alt="avatar" />
+      <div id="displayName" class="profile-name"></div>
+      <div class="row">
+        <input id="avatar-file" type="file" accept="image/*" />
+        <button id="btn-save-profile">Save</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Groups</h3>
+      <div class="row">
+        <div class="group-create" style="width: 100%;">
+          <input id="group-name" placeholder="new group name"/>
+          <input id="group-description" placeholder="group description" />
+          <button id="btn-create-group">Create</button>
+        </div>
+      </div>
+      <ul id="group-list"></ul>
+    </section>
+
+    <section class="card">
+      <h3>Invite</h3>
+      <button id="btn-create-invite">Create Invite for selected</button>
+      <div id="invite-url" class="muted wrap"></div>
+    </section>
+  </aside>
+
+  <main class="chat">
+
+    <h2 id="group-title" class="muted">Select a group</h2>
+    <p id="group-desc" class="muted"></p>
+
+    <div id="group-edit" style="display:none; margin-top:8px;">
+      <textarea id="group-desc-input" placeholder="Update description"></textarea>
+      <div style="display:flex; gap:8px; margin-top:6px;">
+        <button id="btn-save-desc">Save</button>
+        <button id="btn-cancel-desc">Cancel</button>
+      </div>
+    </div>
+
+    <button id="btn-edit-desc" style="display:none; margin-top:6px;">Edit description</button>
+    <div id="messages" class="messages"></div>
+
+    <div class="composer">
+      <textarea id="msg" placeholder="Type a message"></textarea>
+      <button id="btn-send">Send</button>
+    </div>
+  </main>
+
+  <script>
+    const state = { token:null, me:null, currentGroupId:null, socket:null, avatarUrl:null };
+    const H = () => state.token ? {"Content-Type":"application/json","Authorization":"Bearer "+state.token} : {"Content-Type":"application/json"};
+    const HF = () => state.token ? {"Authorization":"Bearer "+state.token} : {};
+
+    function ensureAuth(){
+      const t = localStorage.getItem('token'); const me = localStorage.getItem('me');
+      if(!t || !me){ location.href="/auth.html"; return false; }
+      state.token = t; state.me = JSON.parse(me);
+      return true;
+    }
+    
+    document.getElementById('btn-logout').onclick = () => { localStorage.clear(); location.href="/index.html"; };
+    document.getElementById('btn-save-profile').onclick = saveProfile;
+    document.getElementById('btn-create-group').onclick = createGroup;
+    document.getElementById('btn-send').onclick = sendMessage;
+    document.getElementById('btn-create-invite').onclick = createInvite;
+
+    if(ensureAuth()){
+      connectSocket();
+      loadMe();       
+      loadMyGroups();
+    }
+
+    function connectSocket(){
+        state.socket = io({ transports:["websocket"] });
+        state.socket.on("message:new", (m)=>{
+              if(m.groupId === state.currentGroupId) renderMessage(m);
+            });
+
+        state.socket.on("reaction:update", (ev) => {
+        const bar = document.querySelector(`.reactions[data-mid="${ev.messageId}"]`);
+        if (!bar) return;
+
+        let chip = bar.querySelector(`.react-chip[data-emoji="${ev.emoji}"]`);
+        if (!chip) {
+          chip = document.createElement("button");
+          chip.className = "react-chip";
+          chip.dataset.emoji = ev.emoji;
+          chip.onclick = () => toggleReaction(ev.messageId, ev.emoji);
+          bar.insertBefore(chip, bar.querySelector(".react-add"));
+        }
+
+        chip.textContent = ev.count > 0 ? `${ev.emoji} ${ev.count}` : ev.emoji;
+
+        const isMine = (ev.userId === (state.me?.id));
+        if (isMine) {
+          if (ev.op === "add") chip.classList.add("mine");
+          else chip.classList.remove("mine");
+        }
+      });
+    }
+
+    // Profile
+    async function loadMe(){
+      const r = await fetch("/api/profile/me", { headers: HF() });
+      const d = await r.json();
+      if(r.ok){
+        state.avatarUrl = d.avatarUrl || "";
+        document.getElementById('avatar').src = state.avatarUrl || "https://static.vecteezy.com/system/resources/previews/036/280/651/non_2x/default-avatar-profile-icon-social-media-user-image-gray-avatar-icon-blank-profile-silhouette-illustration-vector.jpg";
+        document.getElementById('displayName').textContent  = d.username || "";
+      }
+    }
+
+    async function saveProfile(){
+      // if a new avatar file was selected, upload it first
+      const file = document.getElementById('avatar-file').files[0];
+      let avatarUrl = state.avatarUrl;
+      if(file){
+        const fd = new FormData(); fd.append("file", file);
+        const up = await fetch("/api/upload/avatar", { method:"POST", headers: HF(), body: fd });
+        const d = await up.json();
+        if(!up.ok) return alert(d.error || "Upload failed");
+        avatarUrl = d.url;
+      }else{
+        alert("Select a valid file");
+        return;
+      }
+      const displayName = document.getElementById('displayName').textContent.trim();
+      const r = await fetch("/api/profile", {
+        method:"PATCH", headers: H(), body: JSON.stringify({ avatarUrl })
+      });
+      if(!r.ok){ const d = await r.json(); alert(d.error || "Save failed"); return; }
+      await loadMe();
+      alert("Profile saved");
+    }
+
+    async function createGroup(){
+      const name = document.getElementById("group-name").value.trim();
+      const description = document.getElementById("group-description").value.trim();
+      if(!name) return;
+      const r = await fetch("/api/groups", { method:"POST", headers:H(), body:JSON.stringify({ name , description })});
+      const d = await r.json();
+      if(!r.ok) return alert(d.error || "Error");
+      document.getElementById("group-name").value = "";
+      document.getElementById("group-description").value = "";
+      loadMyGroups();
+    }
+
+    function getUserId() {
+      const token = localStorage.getItem("token");
+      if (!token) return null;
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      return payload.sub; 
+    }
+
+    async function loadMyGroups(){
+      const r = await fetch("/api/groups/mine", { headers:H() });
+      const list = await r.json();
+      const ul = document.getElementById("group-list"); ul.innerHTML = "";
+      
+      list.forEach(ch=>{
+        const li = document.createElement("li"); li.textContent = ch.name;
+        li.className = "click";
+        li.onclick = ()=> selectGroup(ch.id, ch.name, ch.description, getUserId() == ch.creatorId);
+        ul.appendChild(li);
+      });
+    }
+
+
+    async function selectGroup(id, name, desc, canEdit){
+      state.currentGroupId = id;
+      state.socket.emit("group:join", id);
+      document.getElementById('group-title').textContent = name;
+      document.getElementById('group-desc').textContent = desc; 
+      document.getElementById("btn-edit-desc").style.display = canEdit ? "inline-block" : "none";
+      document.getElementById("group-edit").style.display = "none";
+      const r = await fetch(`/api/messages/${id}`, { headers: H() });
+      const data = await r.json();
+      const box = document.getElementById("messages"); box.innerHTML = "";
+      data.items.forEach(renderMessage);
+    }
+
+    // Enter edit mode
+    document.getElementById("btn-edit-desc").onclick = () => {
+      const current = document.getElementById("group-desc").textContent;
+      document.getElementById("group-desc-input").value = current;
+      document.getElementById("group-edit").style.display = "block";
+    };
+
+    document.getElementById("btn-cancel-desc").onclick = () => {
+      document.getElementById("group-edit").style.display = "none";
+    };
+
+    document.getElementById("btn-save-desc").onclick = async () => {
+      const id = state.currentGroupId;
+      const description = document.getElementById("group-desc-input").value.trim();
+      const r = await fetch(`/api/groups/${id}`, {
+        method: "PATCH",
+        headers: H(), // includes Content-Type: application/json + Bearer token
+        body: JSON.stringify({ description })
+      });
+      const d = await r.json();
+      if (!r.ok) return alert(d.error || "Update failed");
+      // Update UI
+      document.getElementById("group-desc").textContent = d.description || "";
+      document.getElementById("group-edit").style.display = "none";
+      await loadMyGroups();
+    };
+
+    function renderMessage(m){
+      const box = document.getElementById("messages");
+      const div = document.createElement("div");
+      div.className = "msg";
+
+      const reactions = m.reactions || {};
+      const who = m.user?.username ?? m.username;
+      const who_image = m.user?.avatarUrl ?? m.avatarUrl;
+      
+      div.innerHTML =`
+          <div class="msg-row">
+            <img class="msg-avatar" src="${who_image || "https://static.vecteezy.com/system/resources/previews/036/280/651/non_2x/default-avatar-profile-icon-social-media-user-image-gray-avatar-icon-blank-profile-silhouette-illustration-vector.jpg"}" alt="avatar"/>
+            <div class="msg-body">
+              <div class="msg-user">${who}</div>
+              <div class="msg-text">
+                ${m.content || ""}
+              </div>
+              <div class="reactions" data-mid="${m.id}">
+                ${renderReactionChips(reactions, new Set(m.myReactions || []))}
+                <button class="react-add" data-mid="${m.id}">＋</button>
+              </div>
+            </div>
+          </div>
+        `;
+      box.appendChild(div);
+
+      div.querySelectorAll(".react-chip").forEach(btn => {
+        btn.onclick = () => toggleReaction(m.id, btn.dataset.emoji);
+      });
+
+      const addBtn = div.querySelector(".react-add");
+      addBtn.onclick = async () => {
+        const emoji = prompt("React with an emoji (e.g. 👍, ❤️, 😂):");
+        if (!emoji) return;
+        await toggleReaction(m.id, emoji.trim());
+      };
+
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function renderReactionChips(counts, mySet) {
+      const defaults = ["👍","❤️","😂"];
+      const merged = new Set([...defaults, ...Object.keys(counts || {})]);
+      return Array.from(merged).map(e => {
+        const count = counts?.[e] || 0;
+        const mine = mySet.has(e) ? " mine" : "";
+        const label = count > 0 ? `${e} ${count}` : e;
+        return `<button class="react-chip${mine}" data-emoji="${e}">${label}</button>`;
+      }).join("");
+    }
+
+    async function toggleReaction(messageId, emoji) {
+      const r = await fetch(`/api/reactions/${messageId}`, {
+        method: "POST",
+        headers: H(),
+        body: JSON.stringify({ emoji })
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(()=> ({}));
+        return alert(d.error || "Reaction failed");
+      }
+    }
+
+    async function sendMessage(){
+      if(!state.currentGroupId) return;
+      const content = document.getElementById("msg").value.trim();
+
+      const r = await fetch(`/api/messages/${state.currentGroupId}`, {
+        method:"POST", headers:H(), body: JSON.stringify({ content })
+      });
+      if(r.ok) document.getElementById("msg").value = "";
+    }
+
+    async function createInvite(){
+      if(!state.currentGroupId) return alert("Select a group");
+      const r = await fetch(`/api/invites/${state.currentGroupId}`, { method:"POST", headers: H() });
+      const d = await r.json();
+      if(!r.ok) return alert(d.error || "Error");
+      document.getElementById("invite-url").textContent = d.url;
+    }
+  </script>
+</body>
+</html>
