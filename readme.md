@@ -44,7 +44,6 @@ ChatLite-main/
 | `id`          | String PK | UUID                               |
 | `username`    | String    | **Unique**                         |
 | `passwordHash`| String    | bcrypt hash                        |
-| `displayName` | String?   | optional                           |
 | `avatarUrl`   | String?   | optional                           |
 | `createdAt`   | DateTime  | default now()                      |
 
@@ -70,7 +69,7 @@ ChatLite-main/
 |-------------|-------------|----------------------------------------------|
 | `groupId`   | String FK   | → `Groups.id`                                |
 | `userId`    | String FK   | → `Users.id`                                  |
-| `role`      | Enum        | `OWNER` \| `MEMBER` (optionally `MANAGER`)    |
+| `role`      | Enum        | `OWNER` \| `MEMBER` | `MANAGER`| (easy to add)    |
 | `joinedAt`  | DateTime    | default now()                                 |
 
 **Primary key / uniqueness:**  
@@ -85,7 +84,6 @@ ChatLite-main/
 | `groupId`   | String FK   | → `Groups.id`                      |
 | `userId`    | String FK   | → `Users.id`                       |
 | `content`   | String      | may be empty if `imageUrl` present |
-| `imageUrl`  | String?     | optional (message image)           |
 | `createdAt` | DateTime    | default now()                      |
 
 ---
