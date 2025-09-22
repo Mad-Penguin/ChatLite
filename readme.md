@@ -69,7 +69,7 @@ ChatLite-main/
 |-------------|-------------|----------------------------------------------|
 | `groupId`   | String FK   | → `Groups.id`                                |
 | `userId`    | String FK   | → `Users.id`                                  |
-| `role`      | Enum        | `OWNER` \| `MEMBER` | `MANAGER`| (easy to add)    |
+| `role`      | Enum        | `OWNER` \| `MEMBER` \| `MANAGER`\| (easy to add)    |
 | `joinedAt`  | DateTime    | default now()                                 |
 
 **Primary key / uniqueness:**  
